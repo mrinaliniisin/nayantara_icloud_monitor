@@ -2,46 +2,19 @@ import AppKit
 import ServiceManagement
 import SwiftUI
 
-@main
-struct NayantaraApp: App {
-    @State private var monitor: TransferMonitor
-    @State private var activity: ActivityWatcher
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let monitor = TransferMonitor()
+    private let activity = ActivityWatcher()
 
-    init() {
-        let monitor = TransferMonitor()
-        let activity = ActivityWatcher()
+    func applicationDidFinishLaunching(_ notification: Notification) {
         monitor.start()
         activity.start(roots: TransferMonitor.watchedRoots)
-        _monitor = State(initialValue: monitor)
-        _activity = State(initialValue: activity)
-    }
 
-    var body: some Scene {
-        MenuBarExtra {
-            PopoverView(monitor: monitor, activity: activity)
-        } label: {
-            MenuBarLabel(monitor: monitor)
-        }
-        .menuBarExtraStyle(.window)
-    }
-}
-
-struct MenuBarLabel: View {
-    let monitor: TransferMonitor
-
-    var body: some View {
-        let down = monitor.aggregateDownload, up = monitor.aggregateUpload
-        let symbol =
-            down != nil && up != nil ? "arrow.up.arrow.down.circle"
-            : down != nil ? "icloud.and.arrow.down"
-            : up != nil ? "icloud.and.arrow.up"
-            : "icloud"
-        HStack(spacing: 3) {
-            Image(systemName: symbol)
-            if let t = down ?? up {
-                Text(t.fraction, format: .percent.precision(.fractionLength(0))).monospacedDigit()
-            }
-        }
+        let content = { [monitor, activity] in AnyView(PopoverView(monitor: monitor, activity: activity)) }
+        StatusItemController.shared.start(monitor: monitor, content: content)
+        DetachedWindow.shared.content = content
+        DetachedWindow.shared.restore()
     }
 }
 
@@ -50,12 +23,13 @@ struct MenuBarLabel: View {
 struct PopoverView: View {
     let monitor: TransferMonitor
     let activity: ActivityWatcher
+    private var appearance: Appearance { .shared }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if monitor.isIdle {
                 Label("iCloud Drive is up to date", systemImage: "checkmark.icloud")
-                    .font(.headline)
+                    .scaledFont(.headline)
             }
             if let d = monitor.aggregateDownload { HeadlineCard(title: "Downloading", symbol: "arrow.down.circle.fill", t: d) }
             if let u = monitor.aggregateUpload { HeadlineCard(title: "Uploading", symbol: "arrow.up.circle.fill", t: u) }
@@ -64,13 +38,18 @@ struct PopoverView: View {
 
             if !monitor.details.isEmpty {
                 Section("Active transfers") {
-                    ForEach(monitor.details) { TransferRow(t: $0) }
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(monitor.details) { TransferRow(t: $0) }
+                        }
+                    }
+                    .frame(maxHeight: 220)
                 }
             }
 
             Section("Recent file activity") {
                 if activity.recent.isEmpty {
-                    Text("No changes seen since launch").foregroundStyle(.secondary).font(.callout)
+                    Text("No changes seen since launch").foregroundStyle(.secondary).scaledFont(.callout)
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 4) {
@@ -85,7 +64,11 @@ struct PopoverView: View {
             Footer()
         }
         .padding(14)
-        .frame(width: 380)
+        .scaledFont(.body)
+        .environment(\.fontScale, appearance.scale)
+        .frame(width: appearance.width)
+        // Solid, not the menu bar popover's default translucent material.
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }
 
@@ -96,7 +79,7 @@ private struct Section<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            Text(title.uppercased()).scaledFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
             content
         }
     }
@@ -108,7 +91,7 @@ struct HeadlineCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Label(title, systemImage: symbol).font(.headline)
+                Label(title, systemImage: symbol).scaledFont(.headline)
                 Spacer()
                 Text(t.fraction, format: .percent.precision(.fractionLength(1))).monospacedDigit().bold()
             }
@@ -120,13 +103,13 @@ struct HeadlineCard: View {
                     Text("\(done.formatted()) / \(all.formatted()) items")
                 }
             }
-            .font(.callout).monospacedDigit()
+            .scaledFont(.callout).monospacedDigit()
             HStack {
                 Text(t.bytesPerSecond.map { "\(bytes(Int64($0)))/s" } ?? "Measuring speed…")
                 Spacer()
                 Text(t.secondsRemaining.map { "\(duration($0)) left" } ?? (t.bytesPerSecond == 0 ? "Stalled" : "—"))
             }
-            .font(.callout).foregroundStyle(.secondary).monospacedDigit()
+            .scaledFont(.callout).foregroundStyle(.secondary).monospacedDigit()
         }
         .padding(10)
         .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
@@ -141,7 +124,7 @@ struct DiskCard: View {
         let after = monitor.freeBytesAfterDownloads
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Label("Macintosh HD", systemImage: "internaldrive").font(.headline)
+                Label("Macintosh HD", systemImage: "internaldrive").scaledFont(.headline)
                 Spacer()
                 Text("\(bytes(monitor.freeBytes)) free").monospacedDigit()
             }
@@ -151,7 +134,7 @@ struct DiskCard: View {
                 Text(after < 0
                      ? "Not enough space: pending downloads need \(bytes(-after)) more"
                      : "\(bytes(after)) free once downloads finish")
-                    .font(.callout)
+                    .scaledFont(.callout)
                     .foregroundStyle(after < 5_000_000_000 ? .red : .secondary)
             }
         }
@@ -178,7 +161,7 @@ struct TransferRow: View {
                 Spacer()
                 if let s = t.secondsRemaining { Text("\(duration(s)) left") }
             }
-            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            .scaledFont(.caption1).foregroundStyle(.secondary).monospacedDigit()
         }
         .contentShape(.rect)
         .onTapGesture { if let u = t.url { NSWorkspace.shared.activateFileViewerSelecting([u]) } }
@@ -187,20 +170,21 @@ struct TransferRow: View {
 
 struct FileRow: View {
     let f: FileActivity
+    @Environment(\.fontScale) private var scale
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: icon).foregroundStyle(color).frame(width: 16)
+            Image(systemName: icon).foregroundStyle(color).frame(width: 16 * scale)
             VStack(alignment: .leading, spacing: 0) {
                 Text(f.url.lastPathComponent).lineLimit(1).truncationMode(.middle)
                 Text(f.errorText ?? displayPath(f.url.deletingLastPathComponent()))
-                    .font(.caption).foregroundStyle(f.errorText == nil ? .secondary : Color.red)
+                    .scaledFont(.caption1).foregroundStyle(f.errorText == nil ? .secondary : Color.red)
                     .lineLimit(1).truncationMode(.head)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 0) {
-                Text(f.state.rawValue).font(.caption).foregroundStyle(color)
-                if let s = f.size { Text(bytes(s)).font(.caption2).foregroundStyle(.secondary) }
+                Text(f.state.rawValue).scaledFont(.caption1).foregroundStyle(color)
+                if let s = f.size { Text(bytes(s)).scaledFont(.caption2).foregroundStyle(.secondary) }
             }
         }
         .help(f.url.path)
@@ -230,6 +214,7 @@ struct FileRow: View {
 }
 
 struct Footer: View {
+    @Environment(\.fontScale) private var scale
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
@@ -241,13 +226,40 @@ struct Footer: View {
                     launchAtLogin = SMAppService.mainApp.status == .enabled
                 }
             Spacer()
+            SettingsMenu()
             Button("iCloud Drive") {
                 NSWorkspace.shared.open(FileManager.default.homeDirectoryForCurrentUser
                     .appending(path: "Library/Mobile Documents/com~apple~CloudDocs"))
             }
             Button("Quit") { NSApp.terminate(nil) }
         }
-        .controlSize(.small)
+        .controlSize(scale >= 1.3 ? .regular : .small)
+    }
+}
+
+struct SettingsMenu: View {
+    private var window: DetachedWindow { .shared }
+
+    var body: some View {
+        Menu {
+            if window.isDetached {
+                Button("Attach to Menu Bar", systemImage: "menubar.arrow.up.rectangle") { window.attach() }
+            } else {
+                Button("Detach Window", systemImage: "macwindow.on.rectangle") { window.detach() }
+            }
+            Toggle("Pin on Top", systemImage: "pin",
+                   isOn: Binding(get: { window.isPinned }, set: { window.setPinned($0) }))
+            Divider()
+            Picker("Font Size", systemImage: "textformat.size",
+                   selection: Binding(get: { Appearance.shared.fontSize },
+                                      set: { Appearance.shared.fontSize = $0 })) {
+                ForEach(FontSize.allCases) { Text($0.title).tag($0) }
+            }
+        } label: {
+            Label("Settings", systemImage: "gearshape")
+        }
+        .fixedSize()
+        .help("Detach or pin this panel, and change the text size")
     }
 }
 
