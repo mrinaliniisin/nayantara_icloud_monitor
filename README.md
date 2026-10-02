@@ -4,10 +4,10 @@ A macOS menu bar app that shows what iCloud Drive is doing: what it's uploading 
 
 Finder only shows a single "Downloading N items" bubble, with no speed, time left or disk space. Nayantara keeps a live summary in the menu bar and shows the details when you click it:
 
-- **Downloading / Uploading:** percent done, bytes done out of total, items done out of total, speed, and time left
+- **Downloading / Uploading:** percent done, the same "Downloading 1,431 items · 66.3 MB of 229.1 MB" line Finder shows in its iCloud Drive bubble, speed, and time left
 - **Disk space:** free space now, plus free space once pending downloads finish, with a warning if they won't fit
 - **Active transfers:** each folder being synced, with its own progress bar (click to show it in Finder)
-- **Recent file activity:** the last 40 files that changed in iCloud-synced folders, each marked Uploading, Downloading, Synced, In iCloud only or Error
+- **Recent file activity:** the 20 most recent files that changed in iCloud-synced folders, each marked Uploading, Downloading, Synced, In iCloud only or Error
 
 Everything stays on your Mac. The app only reads information macOS already exposes, and it doesn't use the network.
 
@@ -48,8 +48,19 @@ Nayantara lives only in the menu bar: it has no Dock icon and no window.
 
 - **Open it again** after quitting or restarting: search Spotlight (⌘ Space) for **Nayantara**, or run `open ~/Applications/Nayantara.app`.
 - **Start it automatically:** tick **Launch at login** at the bottom of the popover.
+- **🥾iCloud Sync (restart):** if uploads or downloads sit at zero after your network comes back (for example after blocking iCloud with a firewall app), click **🥾iCloud Sync** at the bottom of the panel. It restarts `bird`, the iCloud Drive background process; macOS relaunches it at once, and it picks up its queue again. Nothing queued is lost.
 - **Quit:** click **Quit** at the bottom of the popover.
 - **Update** after pulling new code: run `./build.sh --run` again. It quits the running copy and replaces it.
+
+## Settings
+
+Click **Settings** (the gear) at the bottom of the panel:
+
+- **Detach Window** moves the panel out of the menu bar into its own window, titled "Nayantara 👀", that you can drag anywhere. While it's detached, clicking the menu bar icon brings that window forward. **Attach to Menu Bar** puts it back.
+- **Pin on Top** keeps the detached window above other windows, on every desktop (Space). Pinning while attached detaches it first.
+- **Font Size** goes from Small to Huge. The panel gets wider to fit the text.
+
+Settings and the window's position are remembered between launches.
 
 ## Uninstall
 
@@ -90,6 +101,13 @@ macOS has no single "iCloud sync status" API. Nayantara combines public ones:
 |---|---|
 | `Sources/Nayantara/TransferMonitor.swift` | Progress subscriptions, speed and time left, disk space |
 | `Sources/Nayantara/ActivityWatcher.swift` | FSEvents watcher and each file's sync state |
-| `Sources/Nayantara/App.swift` | Menu bar item and popover UI |
+| `Sources/Nayantara/App.swift` | App startup and the panel's UI |
+| `Sources/Nayantara/StatusItem.swift` | Menu bar icon and popover |
+| `Sources/Nayantara/DetachedWindow.swift` | Detached window and Pin on Top |
+| `Sources/Nayantara/Appearance.swift` | Font Size setting |
+| `Sources/Nayantara/SyncRestart.swift` | 🥾iCloud Sync button (restarts `bird`) |
+| `Sources/Nayantara/main.swift` | AppKit entry point |
 | `Info.plist` | App bundle settings (`LSUIElement` hides the Dock icon) |
 | `build.sh` | Builds, installs and optionally opens the app |
+| `Resources/AppIcon.icns` | App icon (👀) |
+| `scripts/make-icon.swift` | Regenerates the app icon from the emoji |

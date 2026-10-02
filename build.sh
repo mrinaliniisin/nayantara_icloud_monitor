@@ -12,9 +12,11 @@ BIN="$(swift build -c release --scratch-path "$SCRATCH" --show-bin-path)/Nayanta
 
 pkill -x Nayantara 2>/dev/null || true
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Nayantara"
 cp Info.plist "$APP/Contents/Info.plist"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"   # regenerate: swift scripts/make-icon.swift
 codesign --force --sign - "$APP"
+touch "$APP"   # nudge Finder/Dock to pick up a changed icon
 echo "Built $APP"
 [[ "${1:-}" == "--run" ]] && open "$APP"

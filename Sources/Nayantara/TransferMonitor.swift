@@ -15,6 +15,10 @@ struct Transfer: Identifiable {
     var totalFiles: Int?
     var bytesPerSecond: Double?
     var secondsRemaining: Double?
+    /// The strings Finder shows in its iCloud Drive sidebar bubble, built by
+    /// NSProgress itself: "Downloading 1,431 items" and "66.3 MB of 229.1 MB".
+    var finderSummary: String?
+    var finderDetail: String?
 
     var fraction: Double { totalBytes > 0 ? min(1, Double(completedBytes) / Double(totalBytes)) : 0 }
     var remainingBytes: Int64 { max(0, totalBytes - completedBytes) }
@@ -30,7 +34,9 @@ final class TransferMonitor {
     private(set) var freeBytes: Int64 = 0
     private(set) var totalDiskBytes: Int64 = 0
 
-    @ObservationIgnored private var live: [String: Progress] = [:]
+    // Keyed by object identity: the proxy's fileURL and fileOperationKind are
+    // still nil when it's first published, so they can't identify it on unpublish.
+    @ObservationIgnored private var live: [ObjectIdentifier: Progress] = [:]
     @ObservationIgnored private var samples: [String: [(t: Date, bytes: Int64)]] = [:]
     @ObservationIgnored private var tokens: [Any] = []
     @ObservationIgnored private var timer: Timer?
@@ -82,16 +88,12 @@ final class TransferMonitor {
     // MARK: Subscription callbacks
 
     private func published(_ p: Progress) {
-        live[key(for: p)] = p
+        live[ObjectIdentifier(p)] = p
         refresh()
     }
 
     private func unpublished(_ p: Progress) {
-        let k = key(for: p)
-        if live[k] === p {
-            live[k] = nil
-            samples[k] = nil
-        }
+        live[ObjectIdentifier(p)] = nil
         refresh()
     }
 
@@ -111,7 +113,8 @@ final class TransferMonitor {
 
     private func refresh() {
         let now = Date()
-        transfers = live.map { key, p in
+        transfers = live.values.map { p in
+            let key = key(for: p)
             let done = p.completedUnitCount
             var window = (samples[key] ?? []) + [(now, done)]
             window.removeAll { now.timeIntervalSince($0.t) > Self.rateWindow }
@@ -132,9 +135,15 @@ final class TransferMonitor {
                 completedFiles: p.fileCompletedCount,
                 totalFiles: p.fileTotalCount,
                 bytesPerSecond: rate,
-                secondsRemaining: rate.flatMap { $0 > 0 ? Double(remaining) / $0 : nil }
+                secondsRemaining: rate.flatMap { $0 > 0 ? Double(remaining) / $0 : nil },
+                finderSummary: p.localizedDescription.flatMap { $0.isEmpty ? nil : $0 },
+                finderDetail: p.localizedAdditionalDescription.flatMap { $0.isEmpty ? nil : $0 }
             )
         }
+        // A re-publish can briefly overlap its predecessor; keep one row per id.
+        var seen = Set<String>()
+        transfers = transfers.filter { seen.insert($0.id).inserted }
+        samples = samples.filter { seen.contains($0.key) }
 
         let home = FileManager.default.homeDirectoryForCurrentUser
         if let v = try? home.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]) {

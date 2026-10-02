@@ -42,8 +42,19 @@ final class DetachedWindow {
     }
 
     /// Bring the detached window to the front (what a menu bar click does while detached).
-    func show() {
-        panel?.makeKeyAndOrderFront(nil)
+    /// Given the clicked menu bar icon, a window sitting on a different display moves
+    /// over to that one, just under the icon; on the same display it stays put.
+    func show(near anchor: NSRect? = nil, on screen: NSScreen? = nil) {
+        guard let panel else { return }
+        if let anchor, let screen, panel.screen != screen {
+            let area = screen.visibleFrame
+            var frame = panel.frame
+            frame.size.height = min(frame.height, area.height)
+            frame.origin.x = min(max(anchor.midX - frame.width / 2, area.minX), area.maxX - frame.width)
+            frame.origin.y = area.maxY - frame.height
+            panel.setFrame(frame, display: true)
+        }
+        panel.makeKeyAndOrderFront(nil)
         NSApp.activate()
     }
 
@@ -60,7 +71,8 @@ final class DetachedWindow {
         if on && !isDetached { detach() } else { applyPin() }
     }
 
-    /// The content is a fixed width that follows the Font Size setting; keep the window matching it.
+    /// The window can be dragged wider, but never narrower than the content's
+    /// minimum, which follows the Font Size setting.
     func fitWidth() {
         if let panel { fit(panel) }
     }
@@ -68,7 +80,8 @@ final class DetachedWindow {
     private func fit(_ panel: NSPanel) {
         let width = Appearance.shared.width
         panel.minSize = NSSize(width: width, height: 240)
-        panel.maxSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+        panel.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+        guard panel.frame.width < width else { return }
         var frame = panel.frame
         frame.size.width = width
         panel.setFrame(frame, display: true, animate: false)

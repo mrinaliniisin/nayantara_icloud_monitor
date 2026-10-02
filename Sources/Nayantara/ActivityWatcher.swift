@@ -33,7 +33,7 @@ final class ActivityWatcher {
     @ObservationIgnored private var pending = Set<String>()
     @ObservationIgnored private var flushScheduled = false
 
-    private static let keep = 40
+    private static let keep = 20
     private static let maxChecksPerFlush = 300
     private static let ignoredNames: Set<String> = [".DS_Store", ".localized", "Icon\r"]
 

@@ -3,6 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key><string>Nayantara</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleIdentifier</key><string>local.sindhus.Nayantara</string>
     <key>CFBundleName</key><string>Nayantara</string>
     <key>CFBundlePackageType</key><string>APPL</string>

@@ -31,7 +31,12 @@ final class StatusItemController: NSObject {
 
     @objc private func clicked() {
         if DetachedWindow.shared.isDetached {
-            DetachedWindow.shared.show()
+            // Show it where the click happened: the window may be on another display.
+            if let button = item.button, let window = button.window {
+                DetachedWindow.shared.show(near: window.convertToScreen(button.frame), on: window.screen)
+            } else {
+                DetachedWindow.shared.show()
+            }
         } else if popover.isShown {
             popover.performClose(nil)
         } else {
