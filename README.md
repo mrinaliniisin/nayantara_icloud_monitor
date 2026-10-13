@@ -68,7 +68,7 @@ The Settings window has a tab for each area:
 - **General:** Launch at login, **Font Size** (Small to Huge, for the panel, its menus and the Settings window; the panel gets wider to fit the text), Detach window, Pin on top, and **Uninstall Nayantara…** (see [Uninstall](#uninstall)).
 - **Not Syncing:** everything you've kept out of iCloud Drive, with Resume buttons. See [Stop syncing items](#stop-syncing-items).
 - **Updates:** the version you have and whether Nayantara may use the internet to look for new versions. See [Updates](#updates).
-- **About:** credits, contact, the project's links, and a UPI ID if you'd like to support the work.
+- **About:** credits, contact, the project's links (including [upcoming features](Planned%20Features.md)), and a UPI ID if you'd like to support the work.
 
 Settings and the windows' positions are remembered between launches.
 
@@ -189,6 +189,7 @@ macOS has no single "iCloud sync status" API. Nayantara combines public ones:
 | `Sources/Nayantara/Uninstaller.swift` | Settings › General › Uninstall… |
 | `Sources/Nayantara/main.swift` | AppKit entry point |
 | `Info.plist` | App bundle settings (`LSUIElement` hides the Dock icon) |
+| `Planned Features.md` | What's planned next (linked from Settings › About) |
 | `build.sh` | Builds, installs and optionally opens the app |
 | `Resources/AppIcon.icns` | App icon (👀) |
 | `scripts/make-icon.swift` | Regenerates the app icon from the emoji |

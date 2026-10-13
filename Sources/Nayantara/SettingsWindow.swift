@@ -375,6 +375,7 @@ private struct AboutPane: View {
                 Link("Write to \(Links.email)", destination: URL(string: "mailto:\(Links.email)")!)
                 Link("Project on GitHub", destination: Links.project)
                 Link("What's New", destination: Links.releases)
+                Link("Upcoming features", destination: Links.plannedFeatures)
             }
             VStack(spacing: 2) {
                 Text("Feel like supporting my work?").foregroundStyle(.secondary)
@@ -430,4 +431,5 @@ enum Links {
     static let upiPayment = URL(string: "upi://pay?pa=mrinalinis@upi&pn=Mrinalini%20S&cu=INR")!
     static let project = URL(string: "https://github.com/mrinaliniisin/nayantara_icloud_monitor")!
     static let releases = URL(string: "https://github.com/mrinaliniisin/nayantara_icloud_monitor/releases")!
+    static let plannedFeatures = URL(string: "https://github.com/mrinaliniisin/nayantara_icloud_monitor/blob/main/Planned%20Features.md")!
 }
