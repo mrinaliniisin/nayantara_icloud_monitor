@@ -373,6 +373,7 @@ struct SettingsMenu: View {
 
         menu.addItem(.separator())
         menu.addItem(.action("About Nayantara", "info.circle", font) { showAbout() })
+        menu.addItem(.action("Uninstall Nayantara…", "trash", font) { Uninstaller.confirmAndUninstall() })
 
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: anchor.bounds.height + 4), in: anchor)
     }

@@ -59,8 +59,9 @@ Click **Settings** (the gear) at the bottom of the panel:
 - **Detach Window** moves the panel out of the menu bar into its own window, titled "Nayantara 👀", that you can drag anywhere. While it's detached, clicking the menu bar icon brings that window forward. **Attach to Menu Bar** puts it back.
 - **Pin on Top** keeps the detached window above other windows, on every desktop (Space). Pinning while attached detaches it first.
 - **Font Size** goes from Small to Huge. The panel gets wider to fit the text.
-
 - **Updates** shows the version you have and lets you choose whether Nayantara may use the internet to look for new versions. See below.
+
+- **Uninstall Nayantara…** removes the app: see [Uninstall](#uninstall).
 
 Settings and the window's position are remembered between launches.
 
@@ -78,19 +79,30 @@ Updates are handled by [Sparkle](https://sparkle-project.org), an open-source up
 
 ## Uninstall
 
-1. If you ticked **Launch at login**, untick it first.
-2. Click **Quit** in the popover.
-3. Delete the app and its build files:
+Click **Settings › Uninstall Nayantara…**, then **Uninstall**. Nayantara:
 
-   ```bash
-   rm -rf ~/Applications/Nayantara.app ~/Library/Caches/Nayantara-build ~/Library/Caches/local.sindhus.Nayantara
-   ```
+1. turns off **Launch at login**
+2. deletes its settings and caches
+3. moves itself to the Trash (you can put it back from there until you empty the Trash)
+4. quits
 
-4. Optionally, delete its settings too:
+Your iCloud Drive files aren't touched. macOS leaves an empty settings file, `~/Library/Preferences/local.sindhus.Nayantara.plist`, the same as it does for `defaults delete`.
 
-   ```bash
-   defaults delete local.sindhus.Nayantara
-   ```
+If you already deleted the app, remove what it left behind by hand:
+
+```bash
+rm -rf ~/Library/Caches/local.sindhus.Nayantara ~/Library/HTTPStorages/local.sindhus.Nayantara*
+```
+
+```bash
+defaults delete local.sindhus.Nayantara
+```
+
+If you built it from source, also delete the build files:
+
+```bash
+rm -rf ~/Library/Caches/Nayantara-build
+```
 
 ## Troubleshooting
 
@@ -125,7 +137,9 @@ macOS has no single "iCloud sync status" API. Nayantara combines public ones:
 | `Sources/Nayantara/StatusItem.swift` | Menu bar icon and popover |
 | `Sources/Nayantara/DetachedWindow.swift` | Detached window and Pin on Top |
 | `Sources/Nayantara/Appearance.swift` | Font Size setting |
+| `Sources/Nayantara/Updater.swift` | Settings › Updates (Sparkle) |
 | `Sources/Nayantara/SyncRestart.swift` | 🥾iCloud Sync button (restarts `bird`) |
+| `Sources/Nayantara/Uninstaller.swift` | Settings › Uninstall Nayantara… |
 | `Sources/Nayantara/main.swift` | AppKit entry point |
 | `Info.plist` | App bundle settings (`LSUIElement` hides the Dock icon) |
 | `build.sh` | Builds, installs and optionally opens the app |
