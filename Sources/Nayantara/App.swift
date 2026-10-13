@@ -61,8 +61,16 @@ struct PopoverView: View {
                 Label("iCloud Drive is up to date", systemImage: "checkmark.icloud")
                     .scaledFont(.headline)
             }
-            if let d = monitor.aggregateDownload { HeadlineCard(title: "Downloading", symbol: "arrow.down.circle.fill", t: d) }
-            if let u = monitor.aggregateUpload { HeadlineCard(title: "Uploading", symbol: "arrow.up.circle.fill", t: u) }
+            if let d = monitor.aggregateDownload {
+                HeadlineCard(title: "Downloading", symbol: "arrow.down.circle.fill", t: d, restarts: monitor.recentRestarts(.download))
+            } else if let i = monitor.interruption(.download) {
+                InterruptedCard(title: "Download stopped", i: i, restarts: monitor.recentRestarts(.download))
+            }
+            if let u = monitor.aggregateUpload {
+                HeadlineCard(title: "Uploading", symbol: "arrow.up.circle.fill", t: u, restarts: monitor.recentRestarts(.upload))
+            } else if let i = monitor.interruption(.upload) {
+                InterruptedCard(title: "Upload stopped", i: i, restarts: monitor.recentRestarts(.upload))
+            }
 
             DiskCard(monitor: monitor)
 
@@ -150,6 +158,7 @@ private struct Section<Content: View>: View {
 
 struct HeadlineCard: View {
     let title: String, symbol: String, t: Transfer
+    var restarts: [Restart] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -178,9 +187,60 @@ struct HeadlineCard: View {
                 Text(t.secondsRemaining.map { "\(duration($0)) left" } ?? (t.bytesPerSecond == 0 ? "Stalled" : "—"))
             }
             .scaledFont(.callout).foregroundStyle(.secondary).monospacedDigit()
+            RestartNote(restarts: restarts, upload: t.direction == .upload)
         }
         .padding(10)
         .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
+    }
+}
+
+/// An upload or download that disappeared before finishing, while iCloud decides
+/// whether to try again. Without it the panel would say "up to date".
+struct InterruptedCard: View {
+    let title: String, i: Interruption
+    var restarts: [Restart] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label(title, systemImage: "exclamationmark.arrow.circlepath").scaledFont(.headline)
+                Spacer()
+                Text(i.fraction, format: .percent.precision(.fractionLength(1))).monospacedDigit().bold()
+            }
+            ProgressView(value: i.fraction).tint(.orange)
+            // Re-rendered every second so the wait keeps counting.
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text("Stopped at \(bytes(i.reachedBytes)) of \(bytes(i.totalBytes)) \(ago(i.at, now: context.date)). " +
+                     "iCloud usually tries again from the start.")
+            }
+            .scaledFont(.callout).foregroundStyle(.secondary).monospacedDigit()
+            RestartNote(restarts: restarts, upload: i.direction == .upload)
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
+        .help("iCloud stopped this transfer before it finished, for example after a network error, and hasn't started it again yet.")
+    }
+}
+
+/// "Started over 2 times in the last hour · 66 MB sent again", and what to try.
+struct RestartNote: View {
+    let restarts: [Restart]
+    let upload: Bool
+
+    var body: some View {
+        if !restarts.isEmpty {
+            let lost = restarts.reduce(Int64(0)) { $0 + $1.lostBytes }
+            let times = restarts.count == 1 ? "once" : "\(restarts.count) times"
+            VStack(alignment: .leading, spacing: 2) {
+                Label("Started over \(times) in the last hour · \(bytes(lost)) \(upload ? "sent" : "received") again",
+                      systemImage: "arrow.counterclockwise")
+                if restarts.count >= 2 {
+                    Text("iCloud keeps restarting this \(upload ? "upload" : "download"). Try 🥾iCloud Sync, or another network.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .scaledFont(.callout).foregroundStyle(.orange)
+        }
     }
 }
 

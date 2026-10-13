@@ -32,9 +32,13 @@ final class ActivityWatcher {
     @ObservationIgnored private var stream: FSEventStreamRef?
     @ObservationIgnored private var pending = Set<String>()
     @ObservationIgnored private var flushScheduled = false
+    @ObservationIgnored private var recheckTimer: Timer?
 
     private static let keep = 20
     private static let maxChecksPerFlush = 300
+    /// Rows still moving (or failing) are checked again this often: FSEvents only
+    /// reports content changes, not a finished upload or a new upload error.
+    private static let recheckInterval: TimeInterval = 10
     private static let ignoredNames: Set<String> = [".DS_Store", ".localized", "Icon\r"]
 
     nonisolated private static let keys: Set<URLResourceKey> = [
@@ -65,6 +69,10 @@ final class ActivityWatcher {
         FSEventStreamSetDispatchQueue(stream, .main)
         FSEventStreamStart(stream)
         self.stream = stream
+
+        recheckTimer = Timer.scheduledTimer(withTimeInterval: Self.recheckInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.recheck() }
+        }
     }
 
     private func enqueue(_ paths: some Sequence<String>) {
@@ -89,6 +97,22 @@ final class ActivityWatcher {
         }
     }
 
+    /// Updates rows that were uploading, downloading or failing, in place: their
+    /// position and "seen" time stay, so the list doesn't reshuffle.
+    private func recheck() {
+        let moving = recent.filter { [.uploading, .downloading, .error].contains($0.state) }.map(\.url.path)
+        guard !moving.isEmpty else { return }
+        DispatchQueue.global(qos: .utility).async {
+            let fresh = Dictionary(moving.compactMap(Self.inspect).map { ($0.id, $0) }) { a, _ in a }
+            DispatchQueue.main.async {
+                self.recent = self.recent.map { old in
+                    guard let new = fresh[old.id], new.state != old.state || new.errorText != old.errorText else { return old }
+                    return FileActivity(url: old.url, state: new.state, size: new.size, errorText: new.errorText, seen: old.seen)
+                }
+            }
+        }
+    }
+
     /// Forgets rows at or under `path`, once it's excluded from syncing.
     func drop(under path: String) {
         recent.removeAll { $0.url.path == path || $0.url.path.hasPrefix(path + "/") }
@@ -108,7 +132,11 @@ final class ActivityWatcher {
         // in an excluded node_modules would push everything else off the list.
         if v.isUbiquitousItem != true, NoSync.isExcluded(path) { return nil }
 
-        let error = v.ubiquitousItemUploadingError ?? v.ubiquitousItemDownloadingError
+        // iCloud sets an uploading error ("Couldn't access your iCloud account") on
+        // every new file for as long as its upload is in progress, and clears it when
+        // the upload finishes. So an error counts only once nothing is moving.
+        let moving = v.ubiquitousItemIsUploading == true || v.ubiquitousItemIsDownloading == true
+        let error = moving ? nil : v.ubiquitousItemUploadingError ?? v.ubiquitousItemDownloadingError
         let state: FileActivity.State =
             if error != nil { .error }
             else if v.isUbiquitousItem != true { .local }

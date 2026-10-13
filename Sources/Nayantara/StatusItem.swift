@@ -74,6 +74,7 @@ final class StatusItemController: NSObject {
             down != nil && up != nil ? "arrow.up.arrow.down.circle"
             : down != nil ? "icloud.and.arrow.down"
             : up != nil ? "icloud.and.arrow.up"
+            : !monitor.interruptions.isEmpty ? "exclamationmark.icloud"   // stopped, waiting to retry
             : "icloud"
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Nayantara")
         image?.isTemplate = true

@@ -7,7 +7,8 @@ Finder only shows a single "Downloading N items" bubble, with no speed, time lef
 - **Downloading / Uploading:** percent done, the same "Downloading 1,431 items · 66.3 MB of 229.1 MB" line Finder shows in its iCloud Drive bubble, speed, and time left
 - **Disk space:** free space now, plus free space once pending downloads finish, with a warning if they won't fit
 - **Active transfers:** each folder being synced, with its own progress bar (click to show it in Finder)
-- **Recent file activity:** the 20 most recent files that changed in iCloud-synced folders, each marked Uploading, Downloading, Synced, In iCloud only or Error
+- **Recent file activity:** the 20 most recent files that changed in iCloud-synced folders, each marked Uploading, Downloading, Synced, In iCloud only or Error, and kept up to date while they move
+- **Restarts:** when iCloud throws away part of an upload or download and starts it again, the panel says so, for example "Started over 2 times in the last hour · 66 MB sent again"
 
 Everything stays on your Mac. The app only reads information macOS already exposes, and it doesn't use the network unless you turn on update checks (see [Updates](#updates)). They're off until you do.
 
@@ -147,6 +148,7 @@ rm -rf ~/Library/Caches/Nayantara-build
 
 - **The menu bar icon doesn't appear.** On a MacBook with a notch, crowded menu bar icons are hidden behind the notch. Quit a few other menu bar apps, or hold ⌘ and drag icons to rearrange them. To check that Nayantara is running, use `pgrep -lx Nayantara`.
 - **Speed shows "Measuring speed…".** Speed and time left are worked out from about 15 seconds of samples, so they appear shortly after a transfer starts. "Stalled" means no bytes moved during that window.
+- **"Upload stopped" or "Started over".** iCloud stopped a transfer before it finished, for example after a network error or a restart of its background process, and will usually try again from the start. Repeated restarts of a large upload usually mean the connection to iCloud's storage is slow or dropping. Try **🥾iCloud Sync**, or another network.
 - **The build fails with a Swift version error.** Update Xcode or the Command Line Tools. `Package.swift` needs Swift 6.
 
 ## How it works
@@ -155,6 +157,8 @@ macOS has no single "iCloud sync status" API. Nayantara combines public ones:
 
 - **Progress:** `Progress.addSubscriber(forFileURL:)` on `~/Library/Mobile Documents`, `~/Desktop` and `~/Documents`. This is the same mechanism Finder uses for its progress bubble. The subscription on `Mobile Documents` delivers iCloud's system-wide total. The ones on Desktop and Documents deliver per-folder progress, which can lag behind, so the headline always uses the system-wide total.
 - **Speed and time left:** iCloud doesn't report these, so Nayantara works them out from how many bytes moved over the last 15 seconds.
+- **Restarts:** iCloud doesn't report these either. A transfer whose progress disappears before it finishes is shown as stopped; if it comes back for the same amount of data but from (near) the start, or its byte count goes backwards, that's a restart. When `bird` is restarted mid-upload, the progress disappears for about 26 seconds and comes back at zero.
+- **File states:** iCloud sets an upload error ("Couldn't access your iCloud account") on every new file while its upload is in progress, so Nayantara only shows an error once a file has stopped moving. Rows that are uploading, downloading or failing are checked again every 10 seconds.
 - **Which files are moving:** FSEvents watches the synced folders. Each changed file's iCloud state (uploading, downloading, error, and so on) is read from its `URLResourceValues`.
 - **Disk space:** `volumeAvailableCapacityForImportantUsageKey`, which counts purgeable space the same way macOS does.
 - **Stop syncing:** iCloud Drive skips any item with the `com.apple.fileprovider.ignore#P` extended attribute, and everything in a folder that has it. Nayantara keeps a list of what it excluded. A second FSEvents stream with no delay re-adds the attribute when a save or a recreated folder drops it. iCloud schedules an upload for a new item 50–100 ms after it appears; Nayantara re-adds the attribute in about 15 ms. At launch it checks its list, and scans the synced folders for the attribute set some other way. (The symlinks macOS puts in iCloud Drive for Desktop and Documents carry it too, and are left out.)

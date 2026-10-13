@@ -24,6 +24,24 @@ struct Transfer: Identifiable {
     var remainingBytes: Int64 { max(0, totalBytes - completedBytes) }
 }
 
+/// iCloud threw away part of a transfer and started it again.
+struct Restart {
+    let direction: Transfer.Direction
+    let at: Date
+    let lostBytes: Int64
+}
+
+/// A transfer that disappeared before finishing. iCloud usually retries it after a
+/// pause (26 s when bird restarts; longer after a failed upload), from the start.
+struct Interruption {
+    let direction: Transfer.Direction
+    let totalBytes: Int64
+    let reachedBytes: Int64
+    let at: Date
+
+    var fraction: Double { totalBytes > 0 ? Double(reachedBytes) / Double(totalBytes) : 0 }
+}
+
 /// Subscribes to NSProgress publications under the iCloud-synced folders — the same
 /// mechanism Finder uses for its "Downloading N items" bubble — and derives
 /// throughput / ETA ourselves, since the File Provider leaves those keys unset.
@@ -31,6 +49,10 @@ struct Transfer: Identifiable {
 @MainActor
 final class TransferMonitor {
     private(set) var transfers: [Transfer] = []
+    /// The last hour's restarts, oldest first.
+    private(set) var restarts: [Restart] = []
+    /// Transfers that stopped before finishing and haven't come back yet, by key.
+    private(set) var interruptions: [String: Interruption] = [:]
     private(set) var freeBytes: Int64 = 0
     private(set) var totalDiskBytes: Int64 = 0
 
@@ -38,10 +60,17 @@ final class TransferMonitor {
     // still nil when it's first published, so they can't identify it on unpublish.
     @ObservationIgnored private var live: [ObjectIdentifier: Progress] = [:]
     @ObservationIgnored private var samples: [String: [(t: Date, bytes: Int64)]] = [:]
+    /// The furthest each transfer got, to tell a restart from a resume.
+    @ObservationIgnored private var reached: [String: Int64] = [:]
     @ObservationIgnored private var tokens: [Any] = []
     @ObservationIgnored private var timer: Timer?
 
     private static let rateWindow: TimeInterval = 15
+    private static let restartWindow: TimeInterval = 3600
+    /// Give up waiting for an interrupted transfer to come back (it may have been deleted).
+    private static let interruptionTimeout: TimeInterval = 30 * 60
+    /// Progress can wobble backwards a little; less than this isn't a restart.
+    private static let restartSlack: Int64 = 1_000_000
 
     static var watchedRoots: [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -74,7 +103,17 @@ final class TransferMonitor {
         transfers.filter { !$0.isAggregate }.sorted { $0.remainingBytes > $1.remainingBytes }
     }
 
-    var isIdle: Bool { transfers.isEmpty }
+    var isIdle: Bool { transfers.isEmpty && interruptions.isEmpty }
+
+    /// An interrupted transfer in this direction, while nothing in it is moving.
+    func interruption(_ direction: Transfer.Direction) -> Interruption? {
+        guard headline(direction) == nil else { return nil }
+        return interruptions.values.filter { $0.direction == direction }.max { $0.at < $1.at }
+    }
+
+    func recentRestarts(_ direction: Transfer.Direction) -> [Restart] {
+        restarts.filter { $0.direction == direction }
+    }
 
     /// Free space once every pending download has landed on disk.
     var freeBytesAfterDownloads: Int64 { freeBytes - (aggregateDownload?.remainingBytes ?? 0) }
@@ -94,11 +133,36 @@ final class TransferMonitor {
 
     private func unpublished(_ p: Progress) {
         live[ObjectIdentifier(p)] = nil
+        // Unpublished short of the end: iCloud gave up on it, or bird restarted.
+        // (A finished transfer can unpublish a hair short, hence the 98%.)
+        let key = trackingKey(for: p), total = p.totalUnitCount
+        let furthest = max(reached[key] ?? 0, p.completedUnitCount)
+        if direction(of: p) != .other, total > 0, Double(furthest) < Double(total) * 0.98 {
+            interruptions[key] = Interruption(
+                direction: direction(of: p), totalBytes: total, reachedBytes: furthest, at: Date())
+        }
         refresh()
+    }
+
+    /// A restart, unless one in this direction was just recorded: the File Provider's
+    /// total and the per-folder progress report the same transfer.
+    private func recordRestart(_ direction: Transfer.Direction, lost: Int64, at now: Date) {
+        guard !restarts.contains(where: { $0.direction == direction && now.timeIntervalSince($0.at) < 10 }) else { return }
+        restarts.append(Restart(direction: direction, at: now, lostBytes: lost))
     }
 
     private func key(for p: Progress) -> String {
         "\(direction(of: p))|\(p.fileURL?.path ?? String(describing: ObjectIdentifier(p)))"
+    }
+
+    /// For restart tracking: the File Provider's total and the per-folder progress
+    /// share a key but not their byte counts (the folder's runs ahead), so keep them apart.
+    private func trackingKey(for p: Progress) -> String {
+        key(for: p) + (isAggregate(p) ? "|total" : "")
+    }
+
+    private func isAggregate(_ p: Progress) -> Bool {
+        p.userInfo[ProgressUserInfoKey("FPProgressIsCreatedByFileProviderKey")] != nil
     }
 
     private func direction(of p: Progress) -> Transfer.Direction {
@@ -114,8 +178,28 @@ final class TransferMonitor {
     private func refresh() {
         let now = Date()
         transfers = live.values.map { p in
-            let key = key(for: p)
+            let key = key(for: p), track = trackingKey(for: p)
             let done = p.completedUnitCount
+            let dir = direction(of: p)
+
+            // Back after an interruption: from (near) the start of the same amount is a restart.
+            if let gap = interruptions[track] {
+                let sameSize = abs(gap.totalBytes - p.totalUnitCount) <= max(Self.restartSlack, gap.totalBytes / 50)
+                if sameSize, done + Self.restartSlack < gap.reachedBytes {
+                    recordRestart(dir, lost: gap.reachedBytes, at: now)
+                    samples[key] = nil
+                    reached[track] = 0
+                }
+                interruptions[track] = nil
+            }
+            // Or went backwards without disappearing.
+            if let furthest = reached[track], done + Self.restartSlack < furthest {
+                recordRestart(dir, lost: furthest, at: now)
+                samples[key] = nil
+                reached[track] = 0
+            }
+            reached[track] = max(reached[track] ?? 0, done)
+
             var window = (samples[key] ?? []) + [(now, done)]
             window.removeAll { now.timeIntervalSince($0.t) > Self.rateWindow }
             samples[key] = window
@@ -128,8 +212,8 @@ final class TransferMonitor {
             return Transfer(
                 id: key,
                 url: p.fileURL,
-                direction: direction(of: p),
-                isAggregate: p.userInfo[ProgressUserInfoKey("FPProgressIsCreatedByFileProviderKey")] != nil,
+                direction: dir,
+                isAggregate: isAggregate(p),
                 completedBytes: done,
                 totalBytes: p.totalUnitCount,
                 completedFiles: p.fileCompletedCount,
@@ -144,6 +228,10 @@ final class TransferMonitor {
         var seen = Set<String>()
         transfers = transfers.filter { seen.insert($0.id).inserted }
         samples = samples.filter { seen.contains($0.key) }
+        let tracked = Set(live.values.map(trackingKey))
+        reached = reached.filter { tracked.contains($0.key) || interruptions[$0.key] != nil }
+        interruptions = interruptions.filter { now.timeIntervalSince($0.value.at) < Self.interruptionTimeout }
+        restarts.removeAll { now.timeIntervalSince($0.at) > Self.restartWindow }
 
         let home = FileManager.default.homeDirectoryForCurrentUser
         if let v = try? home.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]) {
