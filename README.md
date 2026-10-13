@@ -61,9 +61,31 @@ Click **Settings** (the gear) at the bottom of the panel:
 - **Font Size** goes from Small to Huge. The panel gets wider to fit the text.
 - **Updates** shows the version you have and lets you choose whether Nayantara may use the internet to look for new versions. See below.
 
+- **Stop Syncing Items…** and **Resume All Syncing…**: see [Stop syncing items](#stop-syncing-items).
 - **Uninstall Nayantara…** removes the app: see [Uninstall](#uninstall).
 
 Settings and the window's position are remembered between launches.
+
+## Stop syncing items
+
+Keep chosen files and folders on this Mac but out of iCloud Drive, for example `node_modules`, `.git`, build output or virtual machine images. Nothing is renamed.
+
+- **Right-click** a row in Active transfers or Recent file activity and choose **Stop Syncing "name"…** or **Stop Syncing "folder" Folder…**
+- Or click **Settings › Stop Syncing Items…** and choose files and folders.
+
+Nayantara asks before it changes anything. Items that stop syncing:
+
+- **stay on this Mac but are removed from iCloud Drive and your other devices.**
+- are listed under **Not syncing** in the panel. Click **Resume** to sync one again; it uploads within seconds. **Settings › Resume All Syncing…** does them all.
+- don't appear in Recent file activity.
+
+Things to know:
+
+- **Exclude folders rather than single files where you can.** Many apps save by writing a new file in place of the old one, which loses the exclusion. Nayantara puts it back within a few milliseconds, before iCloud starts uploading, but only while it's running. A folder stays excluded even when Nayantara isn't running.
+- **Everything inside an excluded folder is excluded.** You can't sync one item inside it on its own.
+- **Items that are only in iCloud can't be excluded** until they're downloaded, since excluding them would leave no copy anywhere. Nayantara offers to download them.
+- **Quitting Nayantara doesn't undo anything.** Excluded items stay excluded, and when it opens again it re-applies any exclusion that was lost while it was closed. To undo them, use Resume All Syncing, or tick the box offered by Uninstall.
+- Items excluded some other way (see below) show as **Excluded outside Nayantara**, with a Resume button.
 
 ## Updates
 
@@ -88,7 +110,19 @@ Click **Settings › Uninstall Nayantara…**, then **Uninstall**. Nayantara:
 
 Your iCloud Drive files aren't touched. macOS leaves an empty settings file, `~/Library/Preferences/local.sindhus.Nayantara.plist`, the same as it does for `defaults delete`.
 
-If you already deleted the app, remove what it left behind by hand:
+If you already deleted the app, items you stopped syncing stay out of iCloud. To list them:
+
+```bash
+find ~/Library/Mobile\ Documents ~/Desktop ~/Documents -xattrname 'com.apple.fileprovider.ignore#P' ! -type l -print
+```
+
+and to sync them all again:
+
+```bash
+find ~/Library/Mobile\ Documents ~/Desktop ~/Documents -xattrname 'com.apple.fileprovider.ignore#P' ! -type l -exec xattr -d 'com.apple.fileprovider.ignore#P' {} \;
+```
+
+Then remove what the app left behind:
 
 ```bash
 rm -rf ~/Library/Caches/local.sindhus.Nayantara ~/Library/HTTPStorages/local.sindhus.Nayantara*
@@ -118,6 +152,7 @@ macOS has no single "iCloud sync status" API. Nayantara combines public ones:
 - **Speed and time left:** iCloud doesn't report these, so Nayantara works them out from how many bytes moved over the last 15 seconds.
 - **Which files are moving:** FSEvents watches the synced folders. Each changed file's iCloud state (uploading, downloading, error, and so on) is read from its `URLResourceValues`.
 - **Disk space:** `volumeAvailableCapacityForImportantUsageKey`, which counts purgeable space the same way macOS does.
+- **Stop syncing:** iCloud Drive skips any item with the `com.apple.fileprovider.ignore#P` extended attribute, and everything in a folder that has it. Nayantara keeps a list of what it excluded. A second FSEvents stream with no delay re-adds the attribute when a save or a recreated folder drops it. iCloud schedules an upload for a new item 50–100 ms after it appears; Nayantara re-adds the attribute in about 15 ms. At launch it checks its list, and scans the synced folders for the attribute set some other way. (The symlinks macOS puts in iCloud Drive for Desktop and Documents carry it too, and are left out.)
 
 `build.sh` puts build output in `~/Library/Caches/Nayantara-build` rather than a `.build` folder next to the source. If the source sits in an iCloud-synced folder such as Desktop or Documents, a `.build` folder would get uploaded to iCloud.
 
@@ -126,6 +161,7 @@ macOS has no single "iCloud sync status" API. Nayantara combines public ones:
 - iCloud's upload queue can't be listed in order.
 - Recent file activity covers only changes seen since the app opened.
 - iCloud account storage (space left in the cloud) isn't shown. Only local disk space is.
+- A single excluded file is protected from save-by-replace only while Nayantara is running.
 
 ## Project layout
 
@@ -139,6 +175,7 @@ macOS has no single "iCloud sync status" API. Nayantara combines public ones:
 | `Sources/Nayantara/Appearance.swift` | Font Size setting |
 | `Sources/Nayantara/Updater.swift` | Settings › Updates (Sparkle) |
 | `Sources/Nayantara/SyncRestart.swift` | 🥾iCloud Sync button (restarts `bird`) |
+| `Sources/Nayantara/NoSync.swift` | Stop Syncing: exclusion list, the attribute, the fast re-apply stream, its dialogs |
 | `Sources/Nayantara/Uninstaller.swift` | Settings › Uninstall Nayantara… |
 | `Sources/Nayantara/main.swift` | AppKit entry point |
 | `Info.plist` | App bundle settings (`LSUIElement` hides the Dock icon) |

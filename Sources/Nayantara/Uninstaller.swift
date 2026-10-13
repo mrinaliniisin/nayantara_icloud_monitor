@@ -24,10 +24,20 @@ enum Uninstaller {
             """
         alert.addButton(withTitle: "Uninstall").hasDestructiveAction = true
         alert.addButton(withTitle: "Cancel")
+        // Excluded folders would otherwise stay out of iCloud with nothing left to say why.
+        let noSync = NoSync.shared
+        let excluded = noSync.rules.count + noSync.foundElsewhere.count
+        if excluded > 0 {
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = excluded == 1
+                ? "Resume syncing the 1 item that isn't syncing" : "Resume syncing the \(excluded) items that aren't syncing"
+            alert.suppressionButton?.state = .on
+        }
         // A pinned detached window floats above normal windows; keep the alert above it.
         if DetachedWindow.shared.isPinned { alert.window.level = .modalPanel }
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
+        if excluded > 0, alert.suppressionButton?.state == .on { noSync.resumeAll() }
         uninstall()
     }
 

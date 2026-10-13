@@ -89,6 +89,11 @@ final class ActivityWatcher {
         }
     }
 
+    /// Forgets rows at or under `path`, once it's excluded from syncing.
+    func drop(under path: String) {
+        recent.removeAll { $0.url.path == path || $0.url.path.hasPrefix(path + "/") }
+    }
+
     private func merge(_ found: [FileActivity]) {
         guard !found.isEmpty else { return }
         let fresh = Set(found.map(\.id))
@@ -99,6 +104,9 @@ final class ActivityWatcher {
     nonisolated private static func inspect(_ path: String) -> FileActivity? {
         let url = URL(filePath: path)   // fresh URL => no cached resource values
         guard let v = try? url.resourceValues(forKeys: keys), v.isDirectory != true else { return nil }
+        // Excluded from syncing (Stop Syncing): not sync activity, and one npm install
+        // in an excluded node_modules would push everything else off the list.
+        if v.isUbiquitousItem != true, NoSync.isExcluded(path) { return nil }
 
         let error = v.ubiquitousItemUploadingError ?? v.ubiquitousItemDownloadingError
         let state: FileActivity.State =

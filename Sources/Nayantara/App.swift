@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         monitor.start()
         activity.start(roots: TransferMonitor.watchedRoots)
+        NoSync.shared.didExclude = { [activity] in activity.drop(under: $0) }
+        NoSync.shared.start(roots: TransferMonitor.watchedRoots)
 
         StatusItemController.shared.start(monitor: monitor) { [monitor, activity] in
             AnyView(PopoverView(monitor: monitor, activity: activity))
@@ -31,6 +33,7 @@ struct PopoverView: View {
     /// staying at the fixed popover width.
     var stretches = false
     private var appearance: Appearance { .shared }
+    private var noSync: NoSync { .shared }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -61,6 +64,17 @@ struct PopoverView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             // Only the newest row says how long ago: that's "when did anything last sync".
                             ForEach(activity.recent) { FileRow(f: $0, showTime: $0.id == activity.recent.first?.id) }
+                        }
+                    }
+                }
+            }
+
+            if !noSync.isEmpty {
+                Section("Not syncing") {
+                    CappedScroll(maxHeight: 160 * appearance.scale) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(noSync.rules, id: \.self) { NoSyncRow(path: $0) }
+                            ForEach(noSync.foundElsewhere, id: \.self) { NoSyncRow(path: $0, elsewhere: true) }
                         }
                     }
                 }
@@ -199,6 +213,7 @@ struct TransferRow: View {
         }
         .contentShape(.rect)
         .onTapGesture { if let u = t.url { NSWorkspace.shared.activateFileViewerSelecting([u]) } }
+        .contextMenu { if let u = t.url { StopSyncingMenu(url: u) } }
     }
 }
 
@@ -236,6 +251,7 @@ struct FileRow: View {
         .help("\(f.url.path)\nSeen at \(f.seen.formatted(date: .omitted, time: .standard))")
         .contentShape(.rect)
         .onTapGesture { NSWorkspace.shared.activateFileViewerSelecting([f.url]) }
+        .contextMenu { StopSyncingMenu(url: f.url) }
     }
 
     private var icon: String {
@@ -259,6 +275,63 @@ struct FileRow: View {
     }
 }
 
+/// Right-click menu on a file or transfer row.
+struct StopSyncingMenu: View {
+    let url: URL
+
+    var body: some View {
+        Button("Stop Syncing “\(url.lastPathComponent)”…") { NoSync.shared.confirmAndExclude([url]) }
+        Button("Stop Syncing “\(url.deletingLastPathComponent().lastPathComponent)” Folder…") {
+            NoSync.shared.confirmAndExclude([url.deletingLastPathComponent()])
+        }
+    }
+}
+
+/// A row in Not syncing: an excluded item, what's happening to it, and Resume.
+struct NoSyncRow: View {
+    let path: String
+    var elsewhere = false
+    @Environment(\.fontScale) private var scale
+    private var noSync: NoSync { .shared }
+
+    var body: some View {
+        let url = URL(filePath: path)
+        let status = noSync.status[path]
+        HStack(spacing: 6) {
+            Image(systemName: status == .missing ? "questionmark.circle"
+                  : { if case .failed = status { return "exclamationmark.triangle" }; return "icloud.slash" }())
+                .foregroundStyle(.secondary).frame(width: 16 * scale)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(url.lastPathComponent).lineLimit(1).truncationMode(.middle)
+                Text(detail(status, parent: displayPath(url.deletingLastPathComponent())))
+                    .scaledFont(.caption1).foregroundStyle(isProblem(status) ? Color.red : .secondary)
+                    .lineLimit(1).truncationMode(.head)
+            }
+            Spacer()
+            Button(status == .missing ? "Remove" : "Resume") { noSync.resume(path) }
+                .controlSize(.small)
+                .help(status == .missing ? "Forget this item" : "Upload it to iCloud Drive again")
+        }
+        .help(path)
+        .contentShape(.rect)
+        .onTapGesture { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+    }
+
+    private func detail(_ status: NoSync.Status?, parent: String) -> String {
+        switch status {
+        case .missing: return "Missing: moved or deleted"
+        case .failed(let why): return "Couldn't exclude: \(why)"
+        case .reapplied(let when): return "Kept out of iCloud \(ago(when)) · \(parent)"
+        case .excluded, nil: return elsewhere ? "Excluded outside Nayantara · \(parent)" : parent
+        }
+    }
+
+    private func isProblem(_ status: NoSync.Status?) -> Bool {
+        if case .failed = status { return true }
+        return status == .missing
+    }
+}
+
 struct Footer: View {
     @Environment(\.fontScale) private var scale
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -275,6 +348,8 @@ struct Footer: View {
             SettingsMenu()
             RestartSyncButton()
             Button("Quit") { NSApp.terminate(nil) }
+                .help(NoSync.shared.isEmpty ? "" :
+                      "Items you stopped syncing stay out of iCloud after you quit. To undo that, use Settings › Resume All Syncing.")
         }
         .controlSize(scale >= 1.3 ? .regular : .small)
     }
@@ -372,11 +447,33 @@ struct SettingsMenu: View {
         menu.addItem(updatesItem)
 
         menu.addItem(.separator())
+        let noSync = NoSync.shared
+        menu.addItem(.action("Stop Syncing Items…", "icloud.slash", font) { noSync.chooseAndExclude() })
+        if !noSync.isEmpty {
+            menu.addItem(.action("Resume All Syncing…", "icloud.and.arrow.up", font) { confirmResumeAll() })
+        }
+        menu.addItem(.separator())
         menu.addItem(.action("About Nayantara", "info.circle", font) { showAbout() })
         menu.addItem(.action("Uninstall Nayantara…", "trash", font) { Uninstaller.confirmAndUninstall() })
 
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: anchor.bounds.height + 4), in: anchor)
     }
+}
+
+/// Settings › Resume All Syncing…
+@MainActor
+private func confirmResumeAll() {
+    let noSync = NoSync.shared
+    let count = noSync.rules.count + noSync.foundElsewhere.count
+    StatusItemController.shared.closePopover()
+    NSApp.activate()
+    let alert = NSAlert()
+    alert.messageText = count == 1 ? "Resume syncing 1 item?" : "Resume syncing all \(count) items?"
+    alert.informativeText = "They upload to iCloud Drive again and come back on your other devices."
+    alert.addButton(withTitle: "Resume Syncing")
+    alert.addButton(withTitle: "Cancel")
+    if DetachedWindow.shared.isPinned { alert.window.level = .modalPanel }
+    if alert.runModal() == .alertFirstButtonReturn { noSync.resumeAll() }
 }
 
 /// An empty view laid under the Settings button, so the menu can open just below it.
