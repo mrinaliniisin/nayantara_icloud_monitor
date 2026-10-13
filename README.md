@@ -9,7 +9,7 @@ Finder only shows a single "Downloading N items" bubble, with no speed, time lef
 - **Active transfers:** each folder being synced, with its own progress bar (click to show it in Finder)
 - **Recent file activity:** the 20 most recent files that changed in iCloud-synced folders, each marked Uploading, Downloading, Synced, In iCloud only or Error
 
-Everything stays on your Mac. The app only reads information macOS already exposes, and it doesn't use the network.
+Everything stays on your Mac. The app only reads information macOS already exposes, and it doesn't use the network unless you turn on update checks (see [Updates](#updates)). They're off until you do.
 
 ## Requirements
 
@@ -50,7 +50,7 @@ Nayantara lives only in the menu bar: it has no Dock icon and no window.
 - **Start it automatically:** tick **Launch at login** at the bottom of the popover.
 - **🥾iCloud Sync (restart):** if uploads or downloads sit at zero after your network comes back (for example after blocking iCloud with a firewall app), click **🥾iCloud Sync** at the bottom of the panel. It restarts `bird`, the iCloud Drive background process; macOS relaunches it at once, and it picks up its queue again. Nothing queued is lost.
 - **Quit:** click **Quit** at the bottom of the popover.
-- **Update** after pulling new code: run `./build.sh --run` again. It quits the running copy and replaces it.
+- **Update** after pulling new code: run `./build.sh --run` again. It quits the running copy and replaces it. Or let the app update itself: see [Updates](#updates).
 
 ## Settings
 
@@ -60,7 +60,21 @@ Click **Settings** (the gear) at the bottom of the panel:
 - **Pin on Top** keeps the detached window above other windows, on every desktop (Space). Pinning while attached detaches it first.
 - **Font Size** goes from Small to Huge. The panel gets wider to fit the text.
 
+- **Updates** shows the version you have and lets you choose whether Nayantara may use the internet to look for new versions. See below.
+
 Settings and the window's position are remembered between launches.
+
+## Updates
+
+Nayantara never connects to the internet on its own. Under **Settings › Updates** you can let it:
+
+- **Use the internet to tell me about new updates:** about once a day it fetches a small list of releases from this project's GitHub page. When there's a newer version, it shows what's new and asks before installing.
+- **Use the internet to download and install updates automatically:** downloads new versions in the background and installs them the next time Nayantara quits. Needs the first option.
+- **Check for Updates Now…** checks once, when you click it.
+
+Both options are off until you tick them. While they're off, Nayantara makes no network connections. A check sends nothing about you or your files: it only downloads the release list (and the update itself, if you install it). Every update is signed, and Nayantara refuses one whose signature doesn't match.
+
+Updates are handled by [Sparkle](https://sparkle-project.org), an open-source updater under the MIT License; its license is in `Nayantara.app/Contents/Resources/Sparkle-LICENSE`.
 
 ## Uninstall
 
@@ -69,7 +83,13 @@ Settings and the window's position are remembered between launches.
 3. Delete the app and its build files:
 
    ```bash
-   rm -rf ~/Applications/Nayantara.app ~/Library/Caches/Nayantara-build
+   rm -rf ~/Applications/Nayantara.app ~/Library/Caches/Nayantara-build ~/Library/Caches/local.sindhus.Nayantara
+   ```
+
+4. Optionally, delete its settings too:
+
+   ```bash
+   defaults delete local.sindhus.Nayantara
    ```
 
 ## Troubleshooting
@@ -111,3 +131,39 @@ macOS has no single "iCloud sync status" API. Nayantara combines public ones:
 | `build.sh` | Builds, installs and optionally opens the app |
 | `Resources/AppIcon.icns` | App icon (👀) |
 | `scripts/make-icon.swift` | Regenerates the app icon from the emoji |
+
+## Releasing
+
+Published releases are what the in-app updater installs. `scripts/release.sh` builds a Developer ID signed copy, has Apple notarize it, signs the zip for Sparkle, and creates the GitHub release with `appcast.xml`, the list the app checks.
+
+**Once, before the first release:**
+
+1. Store notarization credentials. Make an app-specific password at [account.apple.com](https://account.apple.com) › Sign-In and Security, then:
+
+   ```bash
+   xcrun notarytool store-credentials nayantara --apple-id YOUR_APPLE_ID --team-id YOUR_TEAM_ID
+   ```
+
+2. Make the update signing key. It's saved in your login Keychain and the public half is printed:
+
+   ```bash
+   ~/Library/Caches/Nayantara-build/artifacts/sparkle/Sparkle/bin/generate_keys
+   ```
+
+   Add the printed `SUPublicEDKey` line to `Info.plist`, then back up the private key somewhere safe outside iCloud Drive, for example a password manager. **If it's lost, copies already installed can never accept another update.**
+
+   ```bash
+   ~/Library/Caches/Nayantara-build/artifacts/sparkle/Sparkle/bin/generate_keys -x sparkle-private-key.txt
+   ```
+
+**Each release:**
+
+1. Raise `CFBundleShortVersionString` in `Info.plist` (for example `1.0` → `1.1`), commit and push. The build number is the commit count, so it goes up by itself.
+2. Optionally write what's new in a Markdown file. It's shown in the update window and on GitHub.
+3. Run:
+
+   ```bash
+   scripts/release.sh notes.md
+   ```
+
+`./build.sh --release` on its own makes the signed copy in `~/Library/Caches/Nayantara-build/dist` without publishing anything.

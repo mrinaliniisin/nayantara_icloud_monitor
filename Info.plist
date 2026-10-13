@@ -11,5 +11,13 @@
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
+    <!-- Sparkle (Updater.swift). Off unless the user turns it on in Settings › Updates:
+         false here also stops Sparkle asking for permission on second launch. -->
+    <key>SUEnableAutomaticChecks</key><false/>
+    <key>SUAutomaticallyUpdate</key><false/>
+    <key>SUEnableSystemProfiling</key><false/>
+    <!-- Public half of the update signing key; the private half is in the releaser's Keychain. -->
+    <key>SUPublicEDKey</key><string>fcsoONw4uIWNG4LdB8x2YbajRCFdD5ZluhznRrfIicY=</string>
+    <key>SUFeedURL</key><string>https://github.com/mrinaliniisin/nayantara_icloud_monitor/releases/latest/download/appcast.xml</string>
 </dict>
 </plist>

@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AnyView(PopoverView(monitor: monitor, activity: activity, stretches: true))
         }
         DetachedWindow.shared.restore()
+        _ = Updater.shared   // starts Sparkle; it connects only if the user turned updates on
     }
 }
 
@@ -310,7 +311,7 @@ struct SettingsMenu: View {
             Label("Settings", systemImage: "gearshape")
         }
         .background(AnchorView(view: anchor))
-        .help("Detach or pin this panel, and change the text size")
+        .help("Detach or pin this panel, change the text size, and choose whether to check for updates")
     }
 
     private func popUp() {
@@ -339,6 +340,37 @@ struct SettingsMenu: View {
         let sizeItem = NSMenuItem.action("Font Size", "textformat.size", font) {}
         sizeItem.submenu = sizes
         menu.addItem(sizeItem)
+
+        let updates = NSMenu()
+        updates.font = font
+        updates.autoenablesItems = false   // so the version line and the download box can be greyed out
+        let updater = Updater.shared
+        let version = NSMenuItem(title: Updater.version, action: nil, keyEquivalent: "")
+        version.isEnabled = false
+        updates.addItem(version)
+        updates.addItem(.separator())
+        let check = NSMenuItem.action("Use the internet to tell me about new updates", nil, font) {
+            updater.checksAutomatically.toggle()
+        }
+        check.state = updater.checksAutomatically ? .on : .off
+        check.toolTip = "Checks GitHub about once a day. While both of these are off, Nayantara doesn't use the network."
+        updates.addItem(check)
+        let download = NSMenuItem.action("Use the internet to download and install updates automatically", nil, font) {
+            updater.downloadsAutomatically.toggle()
+        }
+        download.state = updater.downloadsAutomatically ? .on : .off
+        download.isEnabled = updater.checksAutomatically   // installing needs the check
+        download.toolTip = "Downloads new versions in the background and installs them the next time Nayantara quits."
+        updates.addItem(download)
+        updates.addItem(.separator())
+        let now = NSMenuItem.action("Check for Updates Now…", nil, font) { updater.checkNow() }
+        now.isEnabled = updater.canCheck
+        now.toolTip = "Connects to GitHub once, now."
+        updates.addItem(now)
+        let updatesItem = NSMenuItem.action("Updates", "arrow.down.app", font) {}
+        updatesItem.submenu = updates
+        menu.addItem(updatesItem)
+
         menu.addItem(.separator())
         menu.addItem(.action("About Nayantara", "info.circle", font) { showAbout() })
 
@@ -380,7 +412,7 @@ private extension NSMenuItem {
 @MainActor
 func showAbout() {
     let email = "mrinalini_s@icloud.com"
-    let text = "Made with lots of tokens and ❤️ by Claude and Mrinalini S. Write to \(email)"
+    let text = "Made with lots of tokens and ❤️ by Claude and Mrinalini S. Write to \(email)\n\nUpdates by Sparkle, MIT License (see Contents/Resources/Sparkle-LICENSE)."
     let centered = NSMutableParagraphStyle()
     centered.alignment = .center
     let credits = NSMutableAttributedString(string: text, attributes: [
