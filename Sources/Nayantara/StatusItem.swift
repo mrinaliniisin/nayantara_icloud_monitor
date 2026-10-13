@@ -19,7 +19,11 @@ final class StatusItemController: NSObject {
 
         popover.behavior = .transient          // closes when you click elsewhere
         popover.animates = false
-        popover.contentViewController = NSHostingController(rootView: content())
+        let host = NSHostingController(rootView: content())
+        // Without this the popover keeps its first size, so a bigger Font Size
+        // squeezes the lists and truncates the footer instead of growing it.
+        host.sizingOptions = .preferredContentSize
+        popover.contentViewController = host
 
         if let button = item.button {
             button.target = self

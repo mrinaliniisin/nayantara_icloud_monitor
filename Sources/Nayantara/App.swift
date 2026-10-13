@@ -44,12 +44,11 @@ struct PopoverView: View {
 
             if !monitor.details.isEmpty {
                 Section("Active transfers") {
-                    ScrollView {
+                    CappedScroll(maxHeight: 220 * appearance.scale) {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(monitor.details) { TransferRow(t: $0) }
                         }
                     }
-                    .frame(maxHeight: 220)
                 }
             }
 
@@ -57,13 +56,12 @@ struct PopoverView: View {
                 if activity.recent.isEmpty {
                     Text("No changes seen since launch").foregroundStyle(.secondary).scaledFont(.callout)
                 } else {
-                    ScrollView {
+                    CappedScroll(maxHeight: 220 * appearance.scale) {
                         VStack(alignment: .leading, spacing: 4) {
                             // Only the newest row says how long ago: that's "when did anything last sync".
                             ForEach(activity.recent) { FileRow(f: $0, showTime: $0.id == activity.recent.first?.id) }
                         }
                     }
-                    .frame(maxHeight: 220)
                 }
             }
 
@@ -77,6 +75,29 @@ struct PopoverView: View {
         // Solid, not the menu bar popover's default translucent material.
         .background(Color(nsColor: .windowBackgroundColor))
     }
+}
+
+/// A ScrollView as tall as its content, up to `maxHeight`. A bare ScrollView has
+/// no height of its own, so it's the first thing squeezed when space runs short.
+private struct CappedScroll<Content: View>: View {
+    let maxHeight: CGFloat
+    @ViewBuilder let content: Content
+    @State private var contentHeight: CGFloat = 0
+
+    var body: some View {
+        ScrollView {
+            content.background(GeometryReader { g in
+                Color.clear.preference(key: ContentHeightKey.self, value: g.size.height)
+            })
+        }
+        .frame(height: min(contentHeight, maxHeight))
+        .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
+    }
+}
+
+private struct ContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 private struct Section<Content: View>: View {
