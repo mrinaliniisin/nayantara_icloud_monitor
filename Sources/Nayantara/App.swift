@@ -279,30 +279,79 @@ struct RestartSyncButton: View {
 }
 
 struct SettingsMenu: View {
-    private var window: DetachedWindow { .shared }
+    @Environment(\.fontScale) private var scale
+    @State private var anchor = NSView()
 
     var body: some View {
-        Menu {
-            if window.isDetached {
-                Button("Attach to Menu Bar", systemImage: "menubar.arrow.up.rectangle") { window.attach() }
-            } else {
-                Button("Detach Window", systemImage: "macwindow.on.rectangle") { window.detach() }
-            }
-            Toggle("Pin on Top", systemImage: "pin",
-                   isOn: Binding(get: { window.isPinned }, set: { window.setPinned($0) }))
-            Divider()
-            Picker("Font Size", systemImage: "textformat.size",
-                   selection: Binding(get: { Appearance.shared.fontSize },
-                                      set: { Appearance.shared.fontSize = $0 })) {
-                ForEach(FontSize.allCases) { Text($0.title).tag($0) }
-            }
-            Divider()
-            Button("About Nayantara", systemImage: "info.circle") { showAbout() }
-        } label: {
+        // A plain Button rather than SwiftUI's Menu: Menu becomes an NSMenu that
+        // ignores .font, so neither its label nor its items followed Font Size.
+        Button { popUp() } label: {
             Label("Settings", systemImage: "gearshape")
         }
-        .fixedSize()
+        .background(AnchorView(view: anchor))
         .help("Detach or pin this panel, and change the text size")
+    }
+
+    private func popUp() {
+        let window = DetachedWindow.shared
+        let font = NSFont.menuFont(ofSize: (NSFont.systemFontSize * scale).rounded())
+        let menu = NSMenu()
+        menu.font = font
+
+        if window.isDetached {
+            menu.addItem(.action("Attach to Menu Bar", "menubar.arrow.up.rectangle", font) { window.attach() })
+        } else {
+            menu.addItem(.action("Detach Window", "macwindow.on.rectangle", font) { window.detach() })
+        }
+        let pin = NSMenuItem.action("Pin on Top", "pin", font) { window.setPinned(!window.isPinned) }
+        pin.state = window.isPinned ? .on : .off
+        menu.addItem(pin)
+        menu.addItem(.separator())
+
+        let sizes = NSMenu()
+        sizes.font = font
+        for size in FontSize.allCases {
+            let item = NSMenuItem.action(size.title, nil, font) { Appearance.shared.fontSize = size }
+            item.state = Appearance.shared.fontSize == size ? .on : .off
+            sizes.addItem(item)
+        }
+        let sizeItem = NSMenuItem.action("Font Size", "textformat.size", font) {}
+        sizeItem.submenu = sizes
+        menu.addItem(sizeItem)
+        menu.addItem(.separator())
+        menu.addItem(.action("About Nayantara", "info.circle", font) { showAbout() })
+
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: anchor.bounds.height + 4), in: anchor)
+    }
+}
+
+/// An empty view laid under the Settings button, so the menu can open just below it.
+private struct AnchorView: NSViewRepresentable {
+    let view: NSView
+    func makeNSView(context: Context) -> NSView { view }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+/// Runs a closure when its menu item is chosen. The item keeps it alive through
+/// representedObject, since NSMenuItem.target is weak.
+private final class MenuAction: NSObject {
+    let run: () -> Void
+    init(_ run: @escaping () -> Void) { self.run = run }
+    @objc func fire() { run() }
+}
+
+private extension NSMenuItem {
+    static func action(_ title: String, _ symbol: String?, _ font: NSFont,
+                       _ run: @escaping () -> Void) -> NSMenuItem {
+        let action = MenuAction(run)
+        let item = NSMenuItem(title: title, action: #selector(MenuAction.fire), keyEquivalent: "")
+        item.target = action
+        item.representedObject = action
+        if let symbol {
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: font.pointSize, weight: .regular))
+        }
+        return item
     }
 }
 
