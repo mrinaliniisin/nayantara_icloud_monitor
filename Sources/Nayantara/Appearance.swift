@@ -43,6 +43,7 @@ final class Appearance {
         didSet {
             UserDefaults.standard.set(fontSize.rawValue, forKey: "fontSize")
             DetachedWindow.shared.fitWidth()
+            SettingsWindow.shared.fitSize()
         }
     }
 

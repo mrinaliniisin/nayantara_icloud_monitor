@@ -58,10 +58,11 @@ final class DetachedWindow {
         NSApp.activate()
     }
 
-    /// Put the panel back in the menu bar, and open it there so it's clear where it went.
-    func attach() {
+    /// Put the panel back in the menu bar, and open it there so it's clear where it went
+    /// (unless the Settings window asked, which would lose focus to the popover).
+    func attach(showingPopover: Bool = true) {
         panel?.close()   // willClose handler records the state
-        StatusItemController.shared.showPopover()
+        if showingPopover { StatusItemController.shared.showPopover() }
     }
 
     func setPinned(_ on: Bool) {
@@ -93,6 +94,7 @@ final class DetachedWindow {
     }
 
     private func applyPin() {
+        SettingsWindow.shared.matchPinnedLevel()
         guard let panel else { return }
         panel.level = isPinned ? .floating : .normal
         panel.collectionBehavior = isPinned ? [.canJoinAllSpaces, .fullScreenAuxiliary] : []

@@ -71,7 +71,7 @@ final class Updater: NSObject, @preconcurrency SPUStandardUserDriverDelegate {  
     }
 
     /// A pinned detached window floats above normal windows, as Sparkle's are;
-    /// lift each of Sparkle's windows above it as it opens, like showAbout() does.
+    /// lift each of Sparkle's windows above it as it opens, like the dialogs do.
     private func keepUpdateWindowsAbovePinnedPanel() {
         NotificationCenter.default.addObserver(
             forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main

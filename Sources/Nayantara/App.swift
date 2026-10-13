@@ -1,5 +1,4 @@
 import AppKit
-import ServiceManagement
 import SwiftUI
 
 @MainActor
@@ -21,7 +20,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         DetachedWindow.shared.restore()
         _ = Updater.shared   // starts Sparkle; it connects only if the user turned updates on
+        NSApp.mainMenu = keyboardShortcuts()
     }
+
+    /// Never shown (the app has no menu bar of its own), but its key equivalents
+    /// still work while one of the app's windows is in front: ⌘, opens Settings,
+    /// ⌘W closes the Settings or detached window, and text fields get copy and paste.
+    private func keyboardShortcuts() -> NSMenu {
+        let app = NSMenu()
+        app.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
+        app.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let main = NSMenu()
+        main.addItem(withTitle: "Nayantara", action: nil, keyEquivalent: "").submenu = app
+        main.addItem(withTitle: "Edit", action: nil, keyEquivalent: "").submenu = edit
+        return main
+    }
+
+    @objc private func openSettings() { SettingsWindow.shared.show() }
 }
 
 // MARK: - Popover
@@ -334,19 +354,12 @@ struct NoSyncRow: View {
 
 struct Footer: View {
     @Environment(\.fontScale) private var scale
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
         HStack {
-            Toggle("Launch at login", isOn: $launchAtLogin)
-                .toggleStyle(.checkbox)
-                .onChange(of: launchAtLogin) { _, on in
-                    try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
-                    launchAtLogin = SMAppService.mainApp.status == .enabled
-                }
+            RestartSyncButton()
             Spacer()
             SettingsMenu()
-            RestartSyncButton()
             Button("Quit") { NSApp.terminate(nil) }
                 .help(NoSync.shared.isEmpty ? "" :
                       "Items you stopped syncing stay out of iCloud after you quit. To undo that, use Settings › Resume All Syncing.")
@@ -386,9 +399,10 @@ struct SettingsMenu: View {
             Label("Settings", systemImage: "gearshape")
         }
         .background(AnchorView(view: anchor))
-        .help("Detach or pin this panel, change the text size, and choose whether to check for updates")
+        .help("Detach or pin this panel, stop syncing items, and open Settings")
     }
 
+    /// Quick actions only; everything else is in the Settings window.
     private func popUp() {
         let window = DetachedWindow.shared
         let font = NSFont.menuFont(ofSize: (NSFont.systemFontSize * scale).rounded())
@@ -405,64 +419,30 @@ struct SettingsMenu: View {
         menu.addItem(pin)
         menu.addItem(.separator())
 
-        let sizes = NSMenu()
-        sizes.font = font
-        for size in FontSize.allCases {
-            let item = NSMenuItem.action(size.title, nil, font) { Appearance.shared.fontSize = size }
-            item.state = Appearance.shared.fontSize == size ? .on : .off
-            sizes.addItem(item)
-        }
-        let sizeItem = NSMenuItem.action("Font Size", "textformat.size", font) {}
-        sizeItem.submenu = sizes
-        menu.addItem(sizeItem)
-
-        let updates = NSMenu()
-        updates.font = font
-        updates.autoenablesItems = false   // so the version line and the download box can be greyed out
-        let updater = Updater.shared
-        let version = NSMenuItem(title: Updater.version, action: nil, keyEquivalent: "")
-        version.isEnabled = false
-        updates.addItem(version)
-        updates.addItem(.separator())
-        let check = NSMenuItem.action("Use the internet to tell me about new updates", nil, font) {
-            updater.checksAutomatically.toggle()
-        }
-        check.state = updater.checksAutomatically ? .on : .off
-        check.toolTip = "Checks GitHub about once a day. While both of these are off, Nayantara doesn't use the network."
-        updates.addItem(check)
-        let download = NSMenuItem.action("Use the internet to download and install updates automatically", nil, font) {
-            updater.downloadsAutomatically.toggle()
-        }
-        download.state = updater.downloadsAutomatically ? .on : .off
-        download.isEnabled = updater.checksAutomatically   // installing needs the check
-        download.toolTip = "Downloads new versions in the background and installs them the next time Nayantara quits."
-        updates.addItem(download)
-        updates.addItem(.separator())
-        let now = NSMenuItem.action("Check for Updates Now…", nil, font) { updater.checkNow() }
-        now.isEnabled = updater.canCheck
-        now.toolTip = "Connects to GitHub once, now."
-        updates.addItem(now)
-        let updatesItem = NSMenuItem.action("Updates", "arrow.down.app", font) {}
-        updatesItem.submenu = updates
-        menu.addItem(updatesItem)
-
-        menu.addItem(.separator())
         let noSync = NoSync.shared
         menu.addItem(.action("Stop Syncing Items…", "icloud.slash", font) { noSync.chooseAndExclude() })
         if !noSync.isEmpty {
             menu.addItem(.action("Resume All Syncing…", "icloud.and.arrow.up", font) { confirmResumeAll() })
         }
         menu.addItem(.separator())
-        menu.addItem(.action("About Nayantara", "info.circle", font) { showAbout() })
-        menu.addItem(.action("Uninstall Nayantara…", "trash", font) { Uninstaller.confirmAndUninstall() })
 
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: anchor.bounds.height + 4), in: anchor)
+        let check = NSMenuItem.action("Check for Updates…", "arrow.down.app", font) { Updater.shared.checkNow() }
+        check.isEnabled = Updater.shared.canCheck
+        menu.autoenablesItems = false
+        menu.addItem(check)
+        menu.addItem(.action("What's New", "sparkles", font) { NSWorkspace.shared.open(Links.releases) })
+        menu.addItem(.action("About Nayantara", "info.circle", font) { SettingsWindow.shared.show(.about) })
+        let settings = NSMenuItem.action("Settings…", "gearshape", font) { SettingsWindow.shared.show() }
+        settings.keyEquivalent = ","
+        menu.addItem(settings)
+
+        menu.popUpBelow(anchor)
     }
 }
 
 /// Settings › Resume All Syncing…
 @MainActor
-private func confirmResumeAll() {
+func confirmResumeAll() {
     let noSync = NoSync.shared
     let count = noSync.rules.count + noSync.foundElsewhere.count
     StatusItemController.shared.closePopover()
@@ -476,8 +456,38 @@ private func confirmResumeAll() {
     if alert.runModal() == .alertFirstButtonReturn { noSync.resumeAll() }
 }
 
+extension NSMenu {
+    /// Opens the menu just under `anchor`, once the app is frontmost.
+    ///
+    /// The panel can be open while another app is still frontmost: since macOS 14,
+    /// NSApp.activate() is a request the system may grant late. Clicking the panel
+    /// then activates Nayantara a moment after the click, and that switch closes
+    /// any menu already open, so the first click's menu flashed and vanished.
+    /// Waiting for the activation (or a short timeout, if it's refused) avoids that.
+    func popUpBelow(_ anchor: NSView) {
+        let open = { [self] in
+            _ = popUp(positioning: nil, at: NSPoint(x: 0, y: anchor.bounds.height + 4), in: anchor)
+        }
+        guard !NSApp.isActive else { return open() }
+
+        var opened = false
+        var observer: NSObjectProtocol?
+        let openOnce = {
+            guard !opened else { return }
+            opened = true
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            open()
+        }
+        observer = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { _ in DispatchQueue.main.async(execute: openOnce) }
+        NSApp.activate()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: openOnce)
+    }
+}
+
 /// An empty view laid under the Settings button, so the menu can open just below it.
-private struct AnchorView: NSViewRepresentable {
+struct AnchorView: NSViewRepresentable {
     let view: NSView
     func makeNSView(context: Context) -> NSView { view }
     func updateNSView(_ nsView: NSView, context: Context) {}
@@ -485,13 +495,13 @@ private struct AnchorView: NSViewRepresentable {
 
 /// Runs a closure when its menu item is chosen. The item keeps it alive through
 /// representedObject, since NSMenuItem.target is weak.
-private final class MenuAction: NSObject {
+final class MenuAction: NSObject {
     let run: () -> Void
     init(_ run: @escaping () -> Void) { self.run = run }
     @objc func fire() { run() }
 }
 
-private extension NSMenuItem {
+extension NSMenuItem {
     static func action(_ title: String, _ symbol: String?, _ font: NSFont,
                        _ run: @escaping () -> Void) -> NSMenuItem {
         let action = MenuAction(run)
@@ -504,32 +514,6 @@ private extension NSMenuItem {
         }
         return item
     }
-}
-
-/// The standard About window, with the credits line, a clickable email address and project link.
-@MainActor
-func showAbout() {
-    let email = "mrinalini_s@icloud.com"
-    let github = "github.com/mrinaliniisin/nayantara_icloud_monitor"
-    let text = "Made with lots of tokens and ❤️ by Claude and Mrinalini S. Write to \(email)\n\n\(github)\n\nUpdates by Sparkle, MIT License (see Contents/Resources/Sparkle-LICENSE)."
-    let centered = NSMutableParagraphStyle()
-    centered.alignment = .center
-    let credits = NSMutableAttributedString(string: text, attributes: [
-        .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
-        .foregroundColor: NSColor.labelColor,
-        .paragraphStyle: centered,
-    ])
-    credits.addAttribute(.link, value: URL(string: "mailto:\(email)")!,
-                         range: (text as NSString).range(of: email))
-    credits.addAttribute(.link, value: URL(string: "https://\(github)")!,
-                         range: (text as NSString).range(of: github))
-
-    // The menu bar popover floats above normal windows and would cover About.
-    StatusItemController.shared.closePopover()
-    NSApp.activate()
-    NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Nayantara", .credits: credits])
-    // A pinned detached window floats above normal windows; keep About above it.
-    if DetachedWindow.shared.isPinned { NSApp.keyWindow?.level = .modalPanel }
 }
 
 // MARK: - Formatting

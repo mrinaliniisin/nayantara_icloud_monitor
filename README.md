@@ -47,24 +47,29 @@ Nayantara lives only in the menu bar: it has no Dock icon and no window.
 ## Everyday use
 
 - **Open it again** after quitting or restarting: search Spotlight (⌘ Space) for **Nayantara**, or run `open ~/Applications/Nayantara.app`.
-- **Start it automatically:** tick **Launch at login** at the bottom of the popover.
+- **Start it automatically:** turn on **Launch at login** in **Settings › General**.
 - **🥾iCloud Sync (restart):** if uploads or downloads sit at zero after your network comes back (for example after blocking iCloud with a firewall app), click **🥾iCloud Sync** at the bottom of the panel. It restarts `bird`, the iCloud Drive background process; macOS relaunches it at once, and it picks up its queue again. Nothing queued is lost.
 - **Quit:** click **Quit** at the bottom of the popover.
 - **Update** after pulling new code: run `./build.sh --run` again. It quits the running copy and replaces it. Or let the app update itself: see [Updates](#updates).
 
 ## Settings
 
-Click **Settings** (the gear) at the bottom of the panel:
+Click **Settings** (the gear) at the bottom of the panel for the quick actions:
 
 - **Detach Window** moves the panel out of the menu bar into its own window, titled "Nayantara 👀", that you can drag anywhere. While it's detached, clicking the menu bar icon brings that window forward. **Attach to Menu Bar** puts it back.
 - **Pin on Top** keeps the detached window above other windows, on every desktop (Space). Pinning while attached detaches it first.
-- **Font Size** goes from Small to Huge. The panel gets wider to fit the text.
-- **Updates** shows the version you have and lets you choose whether Nayantara may use the internet to look for new versions. See below.
-
 - **Stop Syncing Items…** and **Resume All Syncing…**: see [Stop syncing items](#stop-syncing-items).
-- **Uninstall Nayantara…** removes the app: see [Uninstall](#uninstall).
+- **Check for Updates…**, **What's New** (the release notes on GitHub) and **About Nayantara**.
+- **Settings…** (⌘,) opens the Settings window.
 
-Settings and the window's position are remembered between launches.
+The Settings window has a tab for each area:
+
+- **General:** Launch at login, **Font Size** (Small to Huge, for the panel, its menus and the Settings window; the panel gets wider to fit the text), Detach window, Pin on top, and **Uninstall Nayantara…** (see [Uninstall](#uninstall)).
+- **Not Syncing:** everything you've kept out of iCloud Drive, with Resume buttons. See [Stop syncing items](#stop-syncing-items).
+- **Updates:** the version you have and whether Nayantara may use the internet to look for new versions. See [Updates](#updates).
+- **About:** credits, contact, the project's links, and a UPI ID if you'd like to support the work.
+
+Settings and the windows' positions are remembered between launches.
 
 ## Stop syncing items
 
@@ -89,11 +94,11 @@ Things to know:
 
 ## Updates
 
-Nayantara never connects to the internet on its own. Under **Settings › Updates** you can let it:
+Nayantara never connects to the internet on its own. In **Settings › Updates** you can let it:
 
 - **Use the internet to tell me about new updates:** about once a day it fetches a small list of releases from this project's GitHub page. When there's a newer version, it shows what's new and asks before installing.
 - **Use the internet to download and install updates automatically:** downloads new versions in the background and installs them the next time Nayantara quits. Needs the first option.
-- **Check for Updates Now…** checks once, when you click it.
+- **Check Now…** (or **Check for Updates…** in the gear menu) checks once, when you click it.
 
 Both options are off until you tick them. While they're off, Nayantara makes no network connections. A check sends nothing about you or your files: it only downloads the release list (and the update itself, if you install it). Every update is signed, and Nayantara refuses one whose signature doesn't match.
 
@@ -101,7 +106,7 @@ Updates are handled by [Sparkle](https://sparkle-project.org), an open-source up
 
 ## Uninstall
 
-Click **Settings › Uninstall Nayantara…**, then **Uninstall**. Nayantara:
+In **Settings › General**, click **Uninstall…**, then **Uninstall**. Nayantara:
 
 1. turns off **Launch at login**
 2. deletes its settings and caches
@@ -171,12 +176,13 @@ macOS has no single "iCloud sync status" API. Nayantara combines public ones:
 | `Sources/Nayantara/ActivityWatcher.swift` | FSEvents watcher and each file's sync state |
 | `Sources/Nayantara/App.swift` | App startup and the panel's UI |
 | `Sources/Nayantara/StatusItem.swift` | Menu bar icon and popover |
+| `Sources/Nayantara/SettingsWindow.swift` | Settings window and its tabs |
 | `Sources/Nayantara/DetachedWindow.swift` | Detached window and Pin on Top |
 | `Sources/Nayantara/Appearance.swift` | Font Size setting |
 | `Sources/Nayantara/Updater.swift` | Settings › Updates (Sparkle) |
 | `Sources/Nayantara/SyncRestart.swift` | 🥾iCloud Sync button (restarts `bird`) |
 | `Sources/Nayantara/NoSync.swift` | Stop Syncing: exclusion list, the attribute, the fast re-apply stream, its dialogs |
-| `Sources/Nayantara/Uninstaller.swift` | Settings › Uninstall Nayantara… |
+| `Sources/Nayantara/Uninstaller.swift` | Settings › General › Uninstall… |
 | `Sources/Nayantara/main.swift` | AppKit entry point |
 | `Info.plist` | App bundle settings (`LSUIElement` hides the Dock icon) |
 | `build.sh` | Builds, installs and optionally opens the app |
