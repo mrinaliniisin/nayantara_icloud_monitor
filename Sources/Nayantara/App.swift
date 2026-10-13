@@ -408,11 +408,12 @@ private extension NSMenuItem {
     }
 }
 
-/// The standard About window, with the credits line and a clickable email address.
+/// The standard About window, with the credits line, a clickable email address and project link.
 @MainActor
 func showAbout() {
     let email = "mrinalini_s@icloud.com"
-    let text = "Made with lots of tokens and ❤️ by Claude and Mrinalini S. Write to \(email)\n\nUpdates by Sparkle, MIT License (see Contents/Resources/Sparkle-LICENSE)."
+    let github = "github.com/mrinaliniisin/nayantara_icloud_monitor"
+    let text = "Made with lots of tokens and ❤️ by Claude and Mrinalini S. Write to \(email)\n\n\(github)\n\nUpdates by Sparkle, MIT License (see Contents/Resources/Sparkle-LICENSE)."
     let centered = NSMutableParagraphStyle()
     centered.alignment = .center
     let credits = NSMutableAttributedString(string: text, attributes: [
@@ -422,7 +423,11 @@ func showAbout() {
     ])
     credits.addAttribute(.link, value: URL(string: "mailto:\(email)")!,
                          range: (text as NSString).range(of: email))
+    credits.addAttribute(.link, value: URL(string: "https://\(github)")!,
+                         range: (text as NSString).range(of: github))
 
+    // The menu bar popover floats above normal windows and would cover About.
+    StatusItemController.shared.closePopover()
     NSApp.activate()
     NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Nayantara", .credits: credits])
     // A pinned detached window floats above normal windows; keep About above it.
